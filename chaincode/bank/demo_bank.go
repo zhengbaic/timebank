@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-
+	"time"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	sc "github.com/hyperledger/fabric/protos/peer"
 )
@@ -22,27 +22,33 @@ type Task struct {
 	Accepted string `json:"accepted"`
 	Completed string `json:"completed"`
 	Owner string `json:"owner"`
+	PublishTime string `json:"publishtime"`
+	AcceptedTime string `json:"acceptedtime"`
+	CompletedTime string `json:"completedtime"`
+}
+
+type People struct {
+	Name string `json:"name"`
+	Asset string `json:"asset"`
+	PublishedTask string `json:"publishedtask"`
+	AcceptedTask string `json:"acceptedtask"`
+	CompletedTask string `json:"completedtask"`
 }
 
 //{"Args":["init","zpl"]}
 //original value: 0 asset
 func (s *SmartContract) Init(APIstub shim.ChaincodeStubInterface) sc.Response {
-	fmt.Println("Initing.......==============================================================")
+	fmt.Println("Person Init")
 	_, args := APIstub.GetFunctionAndParameters()
-	var person string 
-	var Aval int 
-	var err error 
-
-	Aval = 100
 	if len(args) != 1 {
 		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
-	person = args[0]
-	fmt.Printf("Asset = %d", Aval)
-
+	var person = People{Name: args[0], Asset: "0", PublishedTask: "None", AcceptedTask: "None", CompletedTask: "None"}
+	
+	personAsBytes, _ := json.Marshal(person)
 	//write the state to the ledger
-	err = APIstub.PutState(person,[]byte(strconv.Itoa(Aval)))
+	err := APIstub.PutState(args[0], personAsBytes)	
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -96,13 +102,14 @@ func (s *SmartContract) queryPeople(APIstub shim.ChaincodeStubInterface, args []
 	return shim.Success(peopleAsBytes)
 }
 
+
 //"institution"
 //{"Args":["createTask","task0","100","zpl","person","help cleaning the window","not","not","None"]}
 func (s *SmartContract) createTask(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
 	var PersonName string
 	var err error
 	var TimeCoin,Aval int
-	var res []byte
+	PersonName = args[2]
 	TimeCoin, err = strconv.Atoi(args[1])
 	if err != nil {
 		return shim.Error("Invalid transaction amount, expecting a integer value")
@@ -110,75 +117,76 @@ func (s *SmartContract) createTask(APIstub shim.ChaincodeStubInterface, args []s
 	if len(args) != 8 {
 		return shim.Error("Incorrect number of arguments. Expecting 8")
 	}
-	if args[3] == "person" {
+	
+	current_time := time.Now()
+	timestamp := current_time.Unix()
+    t_unix := time.Unix(timestamp, 0)
+    t := t_unix.Format("2006-01-02 03:04:05 PM")
 
-	}
 	if args[3] == "institution" {
 		var task = Task{Id: args[0], Timecoin: args[1], Publisher: args[2], Tasktype: args[3],Title:args[4],
-			Accepted:args[5],Completed: args[6], Owner: args[7]}
+			Accepted:args[5],Completed: args[6], Owner: args[7], PublishTime: t, AcceptedTime:"None", CompletedTime: "None"}
 		taskAsBytes, _ := json.Marshal(task)
-		res = taskAsBytes
 		APIstub.PutState(args[0], taskAsBytes)
-	}else if args[3] == "person"{
-		PersonName = args[2]
-		Avalbytes,err := APIstub.GetState(PersonName)
+	}else if args[3] == "person" {
+		peopleAsBytes, err := APIstub.GetState(PersonName)
 		if err != nil {
 			return shim.Error("Failed to get state")
 		}
-		if Avalbytes == nil {
+		if peopleAsBytes == nil {
 			return shim.Error("Entity not found")
 		}
-		Aval, _ = strconv.Atoi(string(Avalbytes))
-		Aval -= TimeCoin  //decide whether Aval >= 0
-		fmt.Printf("Person Aval = %d\n", Aval) 
+		people := People{}
+		json.Unmarshal(peopleAsBytes, &people)
+		Aval, _ = strconv.Atoi(string(people.Asset))
+		Aval = Aval - TimeCoin
 		if Aval >= 0 {
-			err = APIstub.PutState(PersonName, []byte(strconv.Itoa(Aval)))
-			if err != nil {
-				return shim.Error(err.Error())
+			people.Asset = strconv.Itoa(Aval)
+			if people.PublishedTask  == "None" {
+				people.PublishedTask = args[0]
+			}else{
+				people.PublishedTask = people.PublishedTask + "," + args[0]
 			}
+			peopleAsBytes, _ = json.Marshal(people)
+			APIstub.PutState(PersonName, peopleAsBytes)
+
 			var task = Task{Id: args[0], Timecoin: args[1], Publisher: args[2], Tasktype: args[3],Title:args[4],
-			Accepted:args[5],Completed: args[6], Owner: args[7]}
+			Accepted:args[5],Completed: args[6], Owner: args[7], PublishTime: t, AcceptedTime:"None", CompletedTime: "None"}
 			taskAsBytes, _ := json.Marshal(task)
-			res = taskAsBytes
 			APIstub.PutState(args[0], taskAsBytes)
 		}else {
 			return shim.Error("Insufficient account balance!")
 		}
 	}
-	return shim.Success(res)
+	return shim.Success(nil)
 }
 
 //{"Args":["createPeople","zpl"]} 
 //0 asset
 func (s *SmartContract) createPeople(APIstub shim.ChaincodeStubInterface) sc.Response {
-	fmt.Println("Person Init")
+	fmt.Println("Person Creating")
 	_, args := APIstub.GetFunctionAndParameters()
-	var person string 
-	var Aval int 
-	var err error 
-
-	Aval = 0
 	if len(args) != 1 {
 		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
-	person = args[0]
-	fmt.Printf("Asset = %d", Aval)
-
+	var person = People{Name: args[0], Asset: "0", PublishedTask: "None", AcceptedTask: "None", CompletedTask: "None"}
+	
+	personAsBytes, _ := json.Marshal(person)
 	//write the state to the ledger
-	err = APIstub.PutState(person,[]byte(strconv.Itoa(Aval)))
+	err := APIstub.PutState(args[0], personAsBytes)	
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 
-	return shim.Success(nil)	
+	return shim.Success(nil)
 }
 
 
 func (s *SmartContract) queryAllTasks(APIstub shim.ChaincodeStubInterface) sc.Response {
 
-	startKey := "Task0"
-	endKey := "Task999"
+	startKey := "task0"
+	endKey := "task999"
 
 	resultsIterator, err := APIstub.GetStateByRange(startKey, endKey)
 	if err != nil {
@@ -220,6 +228,7 @@ func (s *SmartContract) queryAllTasks(APIstub shim.ChaincodeStubInterface) sc.Re
 
 //if a task is accepted, then we change its owner
 //{"Args":["changeTaskOwner","task0","zpl"]}
+//when a task is accepted, this function must be called!!!
 func (s *SmartContract) changeTaskOwner(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
 
 	if len(args) != 2 {
@@ -229,19 +238,36 @@ func (s *SmartContract) changeTaskOwner(APIstub shim.ChaincodeStubInterface, arg
 	taskAsBytes, _ := APIstub.GetState(args[0])
 	task := Task{}
 
+	current_time := time.Now()
+	timestamp := current_time.Unix()
+    t_unix := time.Unix(timestamp, 0)
+    t := t_unix.Format("2006-01-02 03:04:05 PM")
+
+
 	json.Unmarshal(taskAsBytes, &task)
 	task.Owner = args[1]
-
+	task.Accepted = "yes"
+	task.AcceptedTime = t
 	taskAsBytes, _ = json.Marshal(task)
 	APIstub.PutState(args[0], taskAsBytes)
 
+	//update person's accepted task
+	peopleAsBytes, _ := APIstub.GetState(args[1])
+	people := People{}
+	json.Unmarshal(peopleAsBytes, &people)
+	if people.AcceptedTask  == "None" {
+		people.AcceptedTask = args[0]
+	}else{
+		people.AcceptedTask = people.AcceptedTask + "," + args[0]
+	}
+	peopleAsBytes, _ = json.Marshal(people)
+	APIstub.PutState(args[1], peopleAsBytes)
 	return shim.Success(nil)
 }
 
 //if a task is completed, then we change its the ledger and its state
 //{"Args":["changeTaskState","task0","zpl"]}
 func (s *SmartContract) changeTaskState(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
-	var PersonName string
 	var Timecoin int //Transaction value
 	var err error
 	var Aval int 
@@ -249,37 +275,44 @@ func (s *SmartContract) changeTaskState(APIstub shim.ChaincodeStubInterface, arg
 	if len(args) != 2 {
 		return shim.Error("Incorrect number of arguments. Expecting 2")
 	}
+	//update task information
+	current_time := time.Now()
+	timestamp := current_time.Unix()
+    t_unix := time.Unix(timestamp, 0)
+    t := t_unix.Format("2006-01-02 03:04:05 PM")
+
+
 
 	taskAsBytes, _ := APIstub.GetState(args[0])
 	task := Task{}
 
 	json.Unmarshal(taskAsBytes, &task)
 	task.Completed = "Yes"
-
+	task.CompletedTime = t
 	Timecoin, err = strconv.Atoi(task.Timecoin)
-	if err != nil {
-		return shim.Error("Invalid transaction amount, expecting a integer value")
-	}
-
 	taskAsBytes, _ = json.Marshal(task)
 	APIstub.PutState(args[0], taskAsBytes)
 
-	
-	PersonName = args[1]
-	Avalbytes,err := APIstub.GetState(PersonName)
+	peopleAsBytes, err := APIstub.GetState(args[1])
 	if err != nil {
 		return shim.Error("Failed to get state")
 	}
-	if Avalbytes == nil {
+	if peopleAsBytes == nil {
 		return shim.Error("Entity not found")
 	}
-	Aval, _ = strconv.Atoi(string(Avalbytes))
+	people := People{}
+	json.Unmarshal(peopleAsBytes, &people)
+	Aval, _ = strconv.Atoi(string(people.Asset))
 	Aval = Aval + Timecoin
+	people.Asset = strconv.Itoa(Aval)
 
-	err = APIstub.PutState(PersonName, []byte(strconv.Itoa(Aval)))
-	if err != nil {
-		return shim.Error(err.Error())
+	if people.CompletedTask  == "None" {
+		people.CompletedTask = args[0]
+	}else{
+		people.CompletedTask = people.CompletedTask + "," + args[0]
 	}
+	peopleAsBytes, _ = json.Marshal(people)
+	APIstub.PutState(args[1], peopleAsBytes)
 	return shim.Success(nil)
 }
 
