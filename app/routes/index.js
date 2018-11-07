@@ -13,17 +13,41 @@ const helper = require('./helper')
 // });
 
 /* GET home page. */
-router.get('/queryPeople', helper.queryPeople)
+router.get('/query', helper.query)
 	.get('/createPeople', helper.createPeople)
+	.get('/createInstitution', helper.createInstitution)
+	.get('/registerInstitution', helper.registerInstitution)
+	.get('/giveInstitutionCoin', helper.giveInstitutionCoin)
+
 	.get('/createTask', helper.createTask)
+	.get('/createGroupTask', helper.createGroupTask)
 	.get('/queryAllTasks', helper.queryAllTasks)
-	.get('/changeTaskOwner', helper.changeTaskOwner)
-	.get('/changeTaskState', helper.changeTaskState)
-	.get('/queryTask', helper.queryTask)
+	.get('/queryAllIns', helper.queryAllIns)
+
+	.get('/acceptSingleTask', helper.acceptSingleTask)
+	.get('/completeSingleTask', helper.completeSingleTask)
+	.get('/acceptGroupTask', helper.acceptGroupTask)
+	.get('/completeGroupTask', helper.completeGroupTask)
+	.get('/cancelTask', helper.cancelTask)
+
+	.get('/queryConfirm', helper.queryConfirm)
+	.get('/confirm', helper.confirm)
+	.get('/recordDisputedTask', helper.recordDisputedTask)
+	.get('/log', helper.log)
+	.get('/readMes', helper.readMes)
+	.get('/addMes', helper.addMes)
+	.get('/isMesread', helper.isMesread)
+
 	.get('/queryPeopleAccept', helper.queryPeopleAccept)
 	.get('/queryPeoplePublish', helper.queryPeoplePublish)
 	.get('/queryPeopleComplete', helper.queryPeopleComplete)
-	.get('/log', helper.log)
+	.get('/queryPeopleDisputed', helper.querypeopleDistued)
+
+	.get('/queryBlockInfo', helper.queryBlockInfo)
+	.get('/queryTransaction', helper.queryTransaction)
+
+	.get('/registerInstitutionbackdoor', helper.registerInstitutionbackdoor)
+	
 
 
 // API doc

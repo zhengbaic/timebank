@@ -4,14 +4,27 @@ const os = require('os')
 const util = require('util')
 
 var mongoose = require('mongoose')
-let db = mongoose.connect('mongodb://localhost:27017/db2')
+let db = mongoose.connect('mongodb://localhost:27017/db17')
+
 let Myuser = mongoose.model("users", {
+	uid: String,
 	username : String,
 	password : String
 })
+
+let Myins = mongoose.model("ins", {
+	iid: String,
+	name : String,
+	password : String,
+	duty: String,
+	address: String,
+	phone: String,
+	authority: String
+})
+
 //no / yes
 let Mytask = mongoose.model("tasks", {
-	taskid: String,
+	tid: String,
 	publisher: String,
 	coin: String,
 	type: String,
@@ -19,10 +32,45 @@ let Mytask = mongoose.model("tasks", {
 	owner: String,
 	time_create: String,
 	time_accept: String,
-	time_complete: String
+	time_complete: String,
+	cancel: String,
+	pconfirm: String,
+	aconfirm: String
+})
+
+let Mygtask = mongoose.model("gtasks", {
+	tid: String,
+	publisher: String,
+	coin: String,
+	type: String,
+	content: String,
+	owner: String,
+	time_create: String,
+	time_accept: String,
+	time_complete: String,
+	cancel: String
+})
+
+let Mymessage = mongoose.model("messages", {
+	name: String,
+	type: String,
+	post: String,
+	post_type: String,
+	time: String,
+	mess: String,
+	read: String
+})
+
+let MyIns_register = mongoose.model("regs", {
+	name: String,
+	regNum: Number,
+	regs: Array
 })
 
 var task_num = 0;
+var gtask_num = 0;
+var user_num = 0;
+var ins_num = 0;
 var channel_name = 'mychannel'
 //load user1
 var fabric_client = new Fabric_Client();
@@ -36,7 +84,6 @@ var peer = fabric_client.newPeer('grpc://localhost:7051');
 channel.addPeer(peer);
 var order = fabric_client.newOrderer('grpc://localhost:7050')
 channel.addOrderer(order);
-
 Fabric_Client.newDefaultKeyValueStore({ path: store_path}).then((state_store) => {
 		// assign the store to the fabric client
 		fabric_client.setStateStore(state_store);
@@ -56,20 +103,28 @@ Fabric_Client.newDefaultKeyValueStore({ path: store_path}).then((state_store) =>
 		} else {
 		    throw new Error('Failed to get user1.... run registerUser.js');
 		}
-	// queryTuna - requires 1 argument, ex: args: ['4'],
-		    const request = {
-		        chaincodeId: 'bank',
-		        txId: tx_id,
-		        fcn: 'queryAllTasks',
-		        args: [""]
-		    };
-		    query_chaincode(request, function(result) {
-		    	var temp = result
-		        var jsonO = eval("("+temp+")");
-		        task_num = jsonO.length
-		        console.log("task_num is " + task_num)
-		    })
-		})
+	})
+
+
+Myuser.find({}, function(err, docs) {
+	console.log(docs)
+	user_num = docs.length;
+	console.log("user_num:" + user_num)
+})
+Myins.find({}, function(err, docs) {
+	console.log(docs)
+	ins_num = docs.length;
+	console.log("ins_num:" + ins_num)
+})
+Mytask.find({}, function(err, docs) {
+	console.log(docs)
+	task_num = docs.length;
+	console.log("task_num:" + task_num)
+})
+Mygtask.find({}, function(err, docs) {
+	gtask_num = docs.length;
+	console.log("gtask_num:" + gtask_num)
+})
 
 async function query_chaincode(request, callback) {
 	result = await channel.queryByChaincode(request).then((query_responses) => {
@@ -93,6 +148,16 @@ async function query_chaincode(request, callback) {
             
 		});
 }
+function timestampToTime(timestamp) {
+        var date = new Date(timestamp);//时间戳为10位需*1000，时间戳为13位的话不需乘1000
+        Y = date.getFullYear() + '-';
+        M = (date.getMonth()+1 < 10 ? '0'+(date.getMonth()+1) : date.getMonth()+1) + '-';
+        D = date.getDate() + ' ';
+        h = date.getHours() + ':';
+        m = date.getMinutes() + ':';
+        s = date.getSeconds();
+        return Y+M+D+h+m+s;
+    }
 
 async function invoke_chaincode(request, callback) {
 	result = await channel.sendTransactionProposal(request).then((results) => {
@@ -191,99 +256,486 @@ async function invoke_chaincode(request, callback) {
 		});
 }
 
-module.exports = {
-	log(req, res) {
-		var people_name = req.query.name
-		var password = req.query.password
-		Myuser.findOne({
-			username: people_name
-		}, function(err, doc) {
-			console.log(doc)
-			if(doc.password == password) {
-				res.send("SUCCESS")
-			} else {
-				res.send("Failed")
+async function queryId(name, type) {
+	var id
+		if(type == "person") {
+			var res = await Myuser.findOne({username: name})
+			if(res == null) {
+				return res
 			}
-		})
-	},
+			console.log(res)
+			return res.uid
+		}
 
-	async queryPeople(req, res) {
-		var people_name = req.query.name
-		let result = ''
-		var tx_id = null;
-		const request = {
-		    chaincodeId: 'bank',
-		    txId: tx_id,
-		    fcn: 'queryPeople',
-		    args: [people_name]
-		};
-		query_chaincode(request, function(result) {
-			console.log(result)
-			res.send(result)
-		})
-	},
+		else {
+			var res = await Myins.findOne({name: name})
+			if(res == null) {
+				return res
+			}
+			return res.iid
+		}
+	}
 
-	async createPeople(req, res) {
+module.exports = {
+	async readMes(req, res) {
+		var name = req.query.name
+		var type = req.query.type
+
+		var result = await Mymessage.update({
+			name: name,
+			type: type
+		}, {
+			$set: {
+				read: "1"
+			}
+		}, {
+			multi: true
+		})
+
+		var docs = await Mymessage.find({
+			name: name,
+			type: type
+		})
+
+		res.send(docs)
+	},
+	async addMes(req, res) {
+		var name = req.query.name
+		var type = req.query.type
+		var mess = req.query.mess
+		var post = req.query.post
+		var ptype = req.query.ptype
+
+		var t = new Date().getTime()
+
+		let new_mess = new Mymessage({
+			name: name,
+			type: type,
+			post: post,
+			post_type: ptype,
+			mess: mess,
+			time: timestampToTime(t),
+			read: "0"
+		})
+		var result = await new_mess.save() 
+		res.send("SUCCESS")
+
+	},
+	async isMesread(req, res) {
+		var name = req.query.name
+		var type = req.query.type
+		var result = await Mymessage.find({
+			name: name,
+			type: type,
+			read: "0"
+		})
+		console.log(result.length)
+
+		res.send("" + result.length)
+		
+	},
+	log(req, res) {
+		var type = req.query.type
 		var people_name = req.query.name
 		var password = req.query.password
-		let result = ''
+		if(type == "person") {
+			Myuser.findOne({
+				username: people_name
+			}, function(err, doc) {
+				if(err) {
+					res.send(err)
+					return
+				}
+				if(doc == null) {
+					res.send({
+						status: 404,
+						message: "Not Exsit"
+					})
+					return
+				}
+				console.log(doc)
+				if(doc.password == password) {
+					res.send({
+						status: 200,
+						message: ""
+					})
+				} else {
+					res.send({
+						status: 404,
+						message: "Password Invaild"
+					})
+				}
+			})
+		} else {
+			Myins.findOne({
+				name: people_name
+			}, function(err, doc) {
+				if(err) {
+					res.send(err)
+					return
+				}
+				if(doc == null) {
+					res.send({
+						status: 404,
+						message: "Not Exsit"
+					})
+					return
+				}
+				console.log(doc)
+				if(doc.password == password) {
+					res.send({
+						status: 200,
+						message: ""
+					})
+				} else {
+					res.send({
+						status: 404,
+						message: "Password Invaild"
+					})
+				}
+			})
+		}
+	},
+	async query(req, res) {
+		var type = req.query.type
+		var name = req.query.name
+		if(type == "person" || type == "ins") {
+			var pro = queryId(name, type)
+			pro.then((id) => {
+				if(id == null) {
+					res.send({
+						status: 404,
+						message: "Not Exsit"
+					})
+					return
+				}
+				console.log("id:" + id)
+				const request = {
+		    		chaincodeId: 'bank',
+		    		txId: tx_id,
+		    		fcn: 'query',
+		    		args: [id]
+				};
+				query_chaincode(request, async function(result) {
+					if(type == "ins") {
+						result = JSON.parse(result)
+						var temp = await Myins.findOne({name: name})
+						result.duty = temp.duty
+						result.address = temp.address
+						result.phone = temp.phone
+						console.log(result)
+						res.send({
+							status: 200,
+							message: JSON.stringify(result)
+						})
+						return
+					}
+					res.send({
+						status: 200,
+						message: result
+					})
+				})
+			})
+		}
+		else {
+			id = "task" + req.query.name
+
+			const request = {
+			    chaincodeId: 'bank',
+			    txId: tx_id,
+			    fcn: 'query',
+			    args: [id]
+			};
+			query_chaincode(request, function(result) {
+				console.log(result)
+				res.send({
+					status: 200,
+					message: result
+				})
+			})
+		}
+	},
+	async createInstitution(req, res) {
+		var password = req.query.password
+		var iid = "ins" + ins_num
+		var name = req.query.name
+		var duty = req.query.duty
+		var address = req.query.address
+		var phone = req.query.phone
+
+		var resu = await Myins.findOne({
+			name: name
+		})
+		console.log(resu)
+		if(resu != null) {
+			console.log("repeated")
+			res.send({
+				status: 404,
+				message: "Duplicated"
+			})
+			return 
+		} else {
+			tx_id = fabric_client.newTransactionID();
+			console.log("Assigning transaction_id: ", tx_id._transaction_id);
+			const request = {
+			    chaincodeId: 'bank',
+			    txId: tx_id,
+			    fcn: 'createInstitution',
+			    args: [name],
+			    chainId: channel_name
+			};
+			invoke_chaincode(request, async function(txid) {
+				let new_ins = new Myins({
+					iid: iid,
+					name: name,
+					password: password,
+					duty: duty,
+					address: address,
+					phone: phone,
+					authority: "0"
+				})
+				var temp = await new_ins.save()
+				ins_num = ins_num + 1
+				let newregs = new MyIns_register({
+					name: name,
+					regNum: 0,
+					regs: []
+				})
+				var temp1 = await newregs.save()
+				for(var i = ins_num; i--;) {
+					console.log(i)
+					var ins = await Myins.findOne({iid: "ins" + i})
+					console.log(ins)
+					if(ins == null || ins.name == name || ins.authority == "0") continue
+						else {
+							console.log(ins.name)
+							let new_mess = new Mymessage({
+								name: ins.name,
+								type: "ins",
+								post: "system",
+								post_type: "system",
+								mess: "新机构节点:" + name + "请求加入区块链网络,其信息为:负责人:" + duty + ",地址:" + address + ",电话:" + phone,
+								time: timestampToTime(new Date().getTime()),
+								read: "0"
+							})
+							var temp2 = await new_mess.save()
+						}
+				}
+				res.send({
+					status: 200,
+					message: ""
+				})
+			})
+		}
+	},
+	async registerInstitution(req, res) {
+		var name = req.query.name
+		var iname = req.query.iname
+		var result = await MyIns_register.findOne({name: name})
+		if(result == null) {res.send("ERROR: No such ins"); return;}
+		for (var i = result.regs.length; i--;) {
+			if(result.regs[i] == iname) {
+				res.send("ERROR: duplicated ins"); return;
+			}
+		}
+		var temp = result.regs
+		var tempnum = result.regNum + 1
+		temp.push(iname)
+		var r2 = await MyIns_register.update({name: name},{regNum: tempnum, regs: temp})
+		if(tempnum == ins_num - 1) {
+			var pro = queryId(name, "ins")
+			pro.then((id) => {
+				tx_id = fabric_client.newTransactionID();
+				console.log("Assigning transaction_id: ", tx_id._transaction_id);
+				const request = {
+				    chaincodeId: 'bank',
+				    txId: tx_id,
+				    fcn: 'registerInstitution',
+				    args: [id],
+				    chainId: channel_name
+				};
+				invoke_chaincode(request, async function(txid) {
+					var temp = await Myins.update({name: name}, {authority: "1"})
+					return res.send("register successfully")
+				})
+			}) 
+		}else {
+			res.send("SUCCESS")
+			return
+		}
+
+
+	},
+
+	async registerInstitutionbackdoor(req, res) {
+		var name = req.query.name
+		var pro = queryId(name, "ins")
+		pro.then((id) => {
+			tx_id = fabric_client.newTransactionID();
+			console.log("Assigning transaction_id: ", tx_id._transaction_id);
+			const request = {
+			    chaincodeId: 'bank',
+			    txId: tx_id,
+			    fcn: 'registerInstitution',
+			    args: [id],
+			    chainId: channel_name
+			};
+			invoke_chaincode(request, async function(txid) {
+				var temp = await Myins.update({name: name}, {authority: "1"})
+				return res.send("register successfully")
+			})
+		})
+	},
+	async giveInstitutionCoin(req, res) {
 		tx_id = fabric_client.newTransactionID();
 		console.log("Assigning transaction_id: ", tx_id._transaction_id);
 		const request = {
 		    chaincodeId: 'bank',
 		    txId: tx_id,
-		    fcn: 'createPeople',
-		    args: [people_name],
+		    fcn: 'giveInstitutionCoin',
+		    args: [],
 		    chainId: channel_name
 		};
 		invoke_chaincode(request, function(txid) {
-			console.log("one time")
-			let new_user = new Myuser({
-				username: people_name,
-				password: password
-			})
-			new_user.save(function(err) {
-				if(err) {
-					console.log(err)
-					return
-				}
-				res.status(200);
-				return res.send("register successfully")
-			})
-			
+			return res.send("success")
 		})
 	},
+	async createPeople(req, res) {
+		var people_name = req.query.name
+		var password = req.query.password
+		var resu = await Myuser.findOne({
+			username: people_name
+		})
+		console.log(resu)
+		if(resu) {
+			console.log("repeated")
+			res.send({
+				status: 404,
+				message: "Duplicated"
+			})
+			return 
+		} else {
+			var uid = "person" + user_num
+			user_num = user_num + 1
+			tx_id = fabric_client.newTransactionID();
+			console.log("Assigning transaction_id: ", tx_id._transaction_id);
+			const request = {
+			    chaincodeId: 'bank',
+			    txId: tx_id,
+			    fcn: 'createPeople',
+			    args: [people_name],
+			    chainId: channel_name
+			};
+			invoke_chaincode(request, function(txid) {
+				let new_user = new Myuser({
+					uid: uid,
+					username: people_name,
+					password: password
+				})
+				new_user.save(function(err) {
+					if(err) {
+						console.log(err)
+						return
+					}
+					return res.send({
+							status: 200,
+							message: ""
+						})
+				})
+				
+			})
+		}
+	},
 	async createTask(req, res) {
-
-		var Tid = 'task' + task_num;
+		var index = task_num + gtask_num
+		var Tid = 'task' + index;
 		task_num = task_num + 1;
 		var coin = req.query.coin;
 		var publisher = req.query.publisher;
 		var type = req.query.type;
+		if(type == "ins") type = "institution"
 		var content = req.query.content;
-		console.log(Tid)
-		let result = ''
+		var uid = ""
+		var pro = queryId(publisher, type)
+		pro.then((id) => {
+			uid = id
+			console.log(uid)
+			console.log(Tid)
+			console.log(coin)
+			console.log(publisher)
+			console.log(type)
+			console.log(content)
+			tx_id = fabric_client.newTransactionID();
+			console.log("Assigning transaction_id: ", tx_id._transaction_id);
+
+			const request = {
+			    chaincodeId: 'bank',
+			    fcn: 'createTask',
+			    args: [Tid, coin, publisher, type, content, uid],
+			    chainId: channel_name,
+			    txId: tx_id
+			};
+			invoke_chaincode(request, function(txid) {
+				let new_task = new Mytask({
+					publisher: publisher,
+					tid: Tid,
+					coin: coin,
+					type: type,
+					content: content,
+					owner: "none",
+					time_create: new Date().getTime(),
+					time_accept: "none",
+					time_complete: "none",
+					cancel: "0",
+					pconfirm: "0",
+					aconfirm: "0"
+				})
+				console.log(JSON.stringify(new_task))
+				new_task.save(function(err){
+					if(err) {
+						console.log(err)
+						return
+					}
+					res.status(200);
+					return res.send(txid)
+				})
+			})
+		})
+	},
+	async createGroupTask(req, res) {
+		var index = task_num + gtask_num
+		var Tid = 'task' + index;
+		gtask_num = gtask_num + 1;
+		var coin = req.query.coin
+		var publisher = req.query.publisher;
+		var type = req.query.type;
+		var content = req.query.content;
+		var uid = ""
+		uid = queryId(publisher, type)
+		var num = req.query.num
+
 		tx_id = fabric_client.newTransactionID();
 		console.log("Assigning transaction_id: ", tx_id._transaction_id);
 
 		const request = {
 		    chaincodeId: 'bank',
-		    fcn: 'createTask',
-		    args: [Tid, coin, publisher, type, content, "no", "no", "none"],
+		    fcn: 'createGroupTask',
+		    args: [Tid, coin, publisher, type, content, uid, num],
 		    chainId: channel_name,
 		    txId: tx_id
 		};
 		invoke_chaincode(request, function(txid) {
-			let new_task = new Mytask({
+			let new_task = new Mygtask({
 				publisher: publisher,
-				taskid: Tid,
+				tid: Tid,
 				coin: coin,
 				type: type,
 				content: content,
 				owner: "none",
 				time_create: new Date().getTime(),
 				time_accept: "none",
-				time_complete: "none"
+				time_complete: "none",
+				cancel: "0"
 			})
 			console.log(JSON.stringify(new_task))
 			new_task.save(function(err){
@@ -292,7 +744,7 @@ module.exports = {
 					return
 				}
 				res.status(200);
-				return res.send("SUCCESS")
+				return res.send(txid)
 			})
 		})
 	},
@@ -310,69 +762,257 @@ module.exports = {
 			res.send(result)
 		})
 	},
-	async queryTask(req, res) {
-		var tid = "task" + req.query.tid;
-		console.log(tid)
-		let result = ''
-		var tx_id = null;
-		const request = {
-		    chaincodeId: 'bank',
-		    txId: tx_id,
-		    fcn: 'queryTask',
-		    args: [tid]
-		};
-		query_chaincode(request, function(result) {
-			console.log(result)
-			res.send(result)
-		})
+	async queryAllIns(req, res) {
+		var resluts = await Myins.find({})
+		for (var i = resluts.length; i--;) {
+			resluts[i].password = undefined
+		}
+		res.send(resluts)
 	},
-	async changeTaskState(req, res) {
+	async cancelTask(req, res) {
+		var tid = "task" + req.query.tid
+		var ttype = req.query.ttype
+		var ptype = req.query.ptype
+		tx_id = fabric_client.newTransactionID();
+		console.log("Assigning transaction_id: ", tx_id._transaction_id);
+		const request = {
+			chaincodeId: 'bank',
+			txId: tx_id,
+			fcn: 'cancelTask',
+			args: [tid, ttype, ptype],
+			chainId: channel_name
+		};
+		invoke_chaincode(request, function(txid) {
+			if(ttype == "single") {
+				Mytask.update({
+					tid: tid
+				}, {
+					cancel: "1"
+				}, function(err) {
+					res.send(txid)
+				})
+			} else if(ttype == "group") {
+				Mygtask.update({
+					tid: tid
+				}, {
+					cancel: "1"
+				}, function(err) {
+					res.send(txid)
+				})
+			}
+		})
+
+	},
+	async completeSingleTask(req, res) {
 		var tid = "task" + req.query.tid
 		var name = req.query.name
-		let result = ''
+		var uid = ""
+		var pro = queryId(name, "person")
+		pro.then((id) => {
+			uid = id
+			tx_id = fabric_client.newTransactionID();
+			console.log("Assigning transaction_id: ", tx_id._transaction_id);
+			const request = {
+			    chaincodeId: 'bank',
+			    txId: tx_id,
+			    fcn: 'completeSingleTask',
+			    args: [tid, uid],
+			    chainId: channel_name
+			};
+			invoke_chaincode(request, function(txid) {
+				Mytask.update({
+					tid: tid
+				}, {
+					time_complete: new Date().getTime()
+				}, function(err) {
+					res.send(txid)
+				})
+			})
+		})
+	},
+	async acceptSingleTask(req, res) {
+		var tid = "task" + req.query.tid
+		var name = req.query.name
+		var uid = ""
+		var pro = queryId(name, "person")
+		pro.then((id) => {
+			uid = id
+			tx_id = fabric_client.newTransactionID();
+			console.log("Assigning transaction_id: ", tx_id._transaction_id);
+			const request = {
+			    chaincodeId: 'bank',
+			    txId: tx_id,
+			    fcn: 'acceptSingleTask',
+			    args: [tid, uid, name],
+			    chainId: channel_name
+			};
+			invoke_chaincode(request, function(txid) {
+				Mytask.update({
+					tid: tid
+				}, {
+					time_accept: new Date().getTime(),
+					owner: name
+				}, function(err) {
+					res.send(txid)
+				})
+			})
+		})
+	},
+	async acceptGroupTask(req, res) {
+		var tid = "task" + req.query.tid
+		var name = req.query.name
+		var uid = queryId(name, "person")
 		tx_id = fabric_client.newTransactionID();
 		console.log("Assigning transaction_id: ", tx_id._transaction_id);
 		const request = {
 		    chaincodeId: 'bank',
 		    txId: tx_id,
-		    fcn: 'changeTaskState',
-		    args: [tid, name],
+		    fcn: 'acceptSingleTask',
+		    args: [tid, uid, name],
 		    chainId: channel_name
 		};
 		invoke_chaincode(request, function(txid) {
-			Mytask.update({
-				taskid: tid
+			Mygtask.findOne({
+				tid: tid
+			}, function(err, doc) {
+				Mygtask.update({
+					tid: tid
+				}, {
+					time_accept: new Date().getTime(),
+					owner: doc.owner + "," + name
+				}, function(err) {
+					res.send(txid)
+				})
+			})
+		})
+	},
+	async completeGroupTask(req, res) {
+		var tid = "task" + req.query.tid
+		tx_id = fabric_client.newTransactionID();
+		console.log("Assigning transaction_id: ", tx_id._transaction_id);
+		const request = {
+		    chaincodeId: 'bank',
+		    txId: tx_id,
+		    fcn: 'completeGroupTask',
+		    args: [tid],
+		    chainId: channel_name
+		};
+		invoke_chaincode(request, function(txid) {
+			Mygtask.update({
+				tid: tid
 			}, {
 				time_complete: new Date().getTime()
 			}, function(err) {
-				res.send("SUCCESS")
+				res.send(txid)
 			})
 		})
 	},
-	async changeTaskOwner(req, res) {
+	async queryConfirm(req, res) {
 		var tid = "task" + req.query.tid
+		Mytask.findOne({
+			tid: tid
+		}, function(err, docs) {
+			res.send(docs)
+		})
+	},
+
+	async confirm(req, res) {
+		var tid = "task" + req.query.tid
+		var type = req.query.type
+		var who = req.query.who
+		var confirm = req.query.confirm
 		var name = req.query.name
-		let result = ''
+		var utype = req.query.utype
+
+		var flag = ""
+		if(who == "p") {
+			var nothing = await Mytask.update({
+				tid: tid
+			}, {
+				pconfirm: confirm
+			})
+			var doc = await Mytask.findOne({tid: tid});
+			flag = doc.aconfirm
+			name = doc.owner
+
+		} else {
+			var nothing = await Mytask.update({
+				tid: tid
+			}, {
+				aconfirm: confirm
+			})
+			var doc = await Mytask.findOne({tid: tid});
+			flag = doc.pconfirm
+			name = doc.owner
+		}
+		if(flag == 0) {
+			res.send("confirm success")
+			return
+		} else if(flag == confirm) {
+			//complete
+			if(type == "single") {
+				var uid = ""
+				var pro = queryId(name, "person")
+				pro.then((id) => {
+					uid = id
+					tx_id = fabric_client.newTransactionID();
+					console.log("!!!!!!!!!!!!")
+					console.log("tid:"+tid)
+					console.log("uid:"+uid)
+					console.log("Assigning transaction_id: ", tx_id._transaction_id);
+					const request = {
+						chaincodeId: 'bank',
+						txId: tx_id,
+						fcn: 'completeSingleTask',
+						args: [tid, uid],
+						chainId: channel_name
+					};
+					invoke_chaincode(request, function(txid) {
+						Mytask.update({
+							tid: tid
+						}, {
+							time_complete: new Date().getTime()
+						}, function(err) {
+							res.send(txid)
+						})
+					})
+				})
+			} else {
+				res.send("wrong type")
+			}
+		} else {
+			//recordDisputedTask
+			tx_id = fabric_client.newTransactionID();
+			console.log("Assigning transaction_id: ", tx_id._transaction_id);
+			const request = {
+				chaincodeId: 'bank',
+				txId: tx_id,
+				fcn: 'recordDisputedTask',
+				args: [tid],
+				chainId: channel_name
+			};
+			invoke_chaincode(request, function(txid) {
+				return res.send("recordDisputedTask successfully")
+			})
+		}
+	},
+
+	async recordDisputedTask(req, res) {
+		var tid = "task" + req.query.tid
 		tx_id = fabric_client.newTransactionID();
 		console.log("Assigning transaction_id: ", tx_id._transaction_id);
 		const request = {
 		    chaincodeId: 'bank',
 		    txId: tx_id,
-		    fcn: 'changeTaskOwner',
-		    args: [tid, name],
+		    fcn: 'recordDisputedTask',
+		    args: [tid],
 		    chainId: channel_name
 		};
 		invoke_chaincode(request, function(txid) {
-			Mytask.update({
-				taskid: tid
-			}, {
-				time_accept: new Date().getTime(),
-				owner: name
-			}, function(err) {
-				res.send("SUCCESS")
-			})
+			return res.send("record successfully")
 		})
 	},
+
 	queryPeoplePublish(req, res) {
 		var name = req.query.name
 		console.log(name)
@@ -395,8 +1035,70 @@ module.exports = {
 		Mytask.find({
 			owner: name
 		}, function(err, docs) {
-			res.send(docs)
+			var temp = []
+			for (var i = 0; i < docs.length; i++) {
+				console.log(JSON.stringify(docs[i]))
+				if(docs[i].time_complete != "none") {
+					temp.push(docs[i])
+				}
+			}
+			res.send(temp)
 		})
+	},
+	async querypeopleDistued(req, res) {
+		var name = req.query.name
+		var result = []
+		var docs1 = await Mytask.find({
+			publisher: name
+		})
+		for (var i = 0; i < docs1.length; i++) {
+			console.log(JSON.stringify(docs1[i]))
+			if(docs1[i].aconfirm != 0 && docs1[i].pconfirm != 0 && docs1[i].pconfirm != docs1[i].aconfirm) {
+				result.push(docs1[i])
+			}
+		}
+		var docs2 = await Mytask.find({
+			owner: name
+		})
+		for (var i = 0; i < docs2.length; i++) {
+			console.log(JSON.stringify(docs2[i]))
+			if(docs2[i].aconfirm != 0 && docs2[i].pconfirm != 0 && docs2[i].pconfirm != docs2[i].aconfirm) {
+				result.push(docs2[i])
+			}
+		}
+		res.send(result)
+	},
+	async queryBlockInfo(req, res) {
+		var info = await channel.queryInfo()
+		var cname = await channel.getName()
+		var orderers = await channel.getOrderers()
+		var orgs = await channel.getOrganizations()
+		var peers = await channel.getPeers()
+		var block = await channel.queryBlock(3)
+		var response = {}
+		response.orderers = []
+		response.peers = []
+		for (var i = orderers.length; i--;) {
+			var temp = {}
+			temp.name = orderers[i]._name
+			temp.url = orderers[i]._url
+			response.orderers.push(temp)
+		}
+		for (var i = peers.length; i--;) {
+			response.peers.push(peers[i]._name)
+		}
+
+		response.height = info.height.low
+		response.name = cname
+		response.orgs = orgs
+		res.send(response)
+	},
+	async queryTransaction(req, res) {
+		var tid = req.query.id
+		var result = await channel.queryTransaction(tid)
+		console.log(result.transactionEnvelope.payload.header)
+		console.log(result.transactionEnvelope.payload.data)
+
 	}
 
 }
