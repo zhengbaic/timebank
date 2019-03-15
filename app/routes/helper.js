@@ -3,13 +3,16 @@ const path = require('path');
 const os = require('os')
 const util = require('util')
 
+
 var mongoose = require('mongoose')
-let db = mongoose.connect('mongodb://localhost:27017/db17')
+let db = mongoose.connect('mongodb://localhost:27017/db38')
 
 let Myuser = mongoose.model("users", {
 	uid: String,
 	username : String,
-	password : String
+	password : String,
+	phone: String,
+	address: String
 })
 
 let Myins = mongoose.model("ins", {
@@ -65,6 +68,15 @@ let MyIns_register = mongoose.model("regs", {
 	name: String,
 	regNum: Number,
 	regs: Array
+})
+
+let MyTx = mongoose.model("txs", {
+	time: String,
+	txid: String,
+	behavior: String,
+	peer: String,
+	publisher: String,
+	object: String
 })
 
 var task_num = 0;
@@ -423,6 +435,19 @@ module.exports = {
 						result.duty = temp.duty
 						result.address = temp.address
 						result.phone = temp.phone
+						result.name = temp.name
+						console.log(result)
+						res.send({
+							status: 200,
+							message: JSON.stringify(result)
+						})
+						return
+					} else {
+						result = JSON.parse(result)
+						var temp = await Myuser.findOne({username: name})
+						result.address = temp.address
+						result.phone = temp.phone
+						result.name = temp.username
 						console.log(result)
 						res.send({
 							status: 200,
@@ -430,10 +455,6 @@ module.exports = {
 						})
 						return
 					}
-					res.send({
-						status: 200,
-						message: result
-					})
 				})
 			})
 		}
@@ -521,6 +542,15 @@ module.exports = {
 							var temp2 = await new_mess.save()
 						}
 				}
+				let new_tx = new MyTx({
+					time: timestampToTime(new Date().getTime()),
+					txid: txid,
+					behavior: "创建机构",
+					peer: "",
+					publisher: iid,
+					object: iid
+				})
+				var temp3 = await new_tx.save()
 				res.send({
 					status: 200,
 					message: ""
@@ -541,8 +571,13 @@ module.exports = {
 		var temp = result.regs
 		var tempnum = result.regNum + 1
 		temp.push(iname)
+		var docs = await Myins.find({"authority": "1"})
+		console.log(docs)
+		var authority_num = docs.length
+		console.log("tempnum:" + tempnum)
+		console.log("authority_num:" + authority_num)
 		var r2 = await MyIns_register.update({name: name},{regNum: tempnum, regs: temp})
-		if(tempnum == ins_num - 1) {
+		if(tempnum == authority_num) {
 			var pro = queryId(name, "ins")
 			pro.then((id) => {
 				tx_id = fabric_client.newTransactionID();
@@ -556,6 +591,15 @@ module.exports = {
 				};
 				invoke_chaincode(request, async function(txid) {
 					var temp = await Myins.update({name: name}, {authority: "1"})
+					let new_tx = new MyTx({
+						time: timestampToTime(new Date().getTime()),
+						txid: txid,
+						behavior: "机构审核通过",
+						peer: "",
+						publisher: id,
+						object: id
+					})
+					var temp3 = await new_tx.save()
 					return res.send("register successfully")
 				})
 			}) 
@@ -603,6 +647,8 @@ module.exports = {
 	async createPeople(req, res) {
 		var people_name = req.query.name
 		var password = req.query.password
+		var phone = req.query.phone
+		var address = req.query.address
 		var resu = await Myuser.findOne({
 			username: people_name
 		})
@@ -626,12 +672,24 @@ module.exports = {
 			    args: [people_name],
 			    chainId: channel_name
 			};
-			invoke_chaincode(request, function(txid) {
+			invoke_chaincode(request, async function(txid) {
 				let new_user = new Myuser({
 					uid: uid,
 					username: people_name,
-					password: password
+					password: password,
+					phone: phone,
+					address: address
 				})
+				let new_tx = new MyTx({
+					time: timestampToTime(new Date().getTime()),
+					txid: txid,
+					behavior: "创建用户",
+					peer: "",
+					publisher: uid,
+					object: uid
+				})
+				var temp3 = await new_tx.save()
+
 				new_user.save(function(err) {
 					if(err) {
 						console.log(err)
@@ -639,7 +697,7 @@ module.exports = {
 					}
 					return res.send({
 							status: 200,
-							message: ""
+							message: txid
 						})
 				})
 				
@@ -675,7 +733,7 @@ module.exports = {
 			    chainId: channel_name,
 			    txId: tx_id
 			};
-			invoke_chaincode(request, function(txid) {
+			invoke_chaincode(request, async function(txid) {
 				let new_task = new Mytask({
 					publisher: publisher,
 					tid: Tid,
@@ -690,6 +748,15 @@ module.exports = {
 					pconfirm: "0",
 					aconfirm: "0"
 				})
+				let new_tx = new MyTx({
+					time: timestampToTime(new Date().getTime()),
+					txid: txid,
+					behavior: "创建任务",
+					peer: "",
+					publisher: publisher,
+					object: Tid
+				})
+				var temp3 = await new_tx.save()
 				console.log(JSON.stringify(new_task))
 				new_task.save(function(err){
 					if(err) {
@@ -697,7 +764,11 @@ module.exports = {
 						return
 					}
 					res.status(200);
-					return res.send(txid)
+					var temp = {
+						"tid" : Tid,
+						"txid" : txid
+					}
+					return res.send(temp)
 				})
 			})
 		})
@@ -724,7 +795,7 @@ module.exports = {
 		    chainId: channel_name,
 		    txId: tx_id
 		};
-		invoke_chaincode(request, function(txid) {
+		invoke_chaincode(request, async function(txid) {
 			let new_task = new Mygtask({
 				publisher: publisher,
 				tid: Tid,
@@ -782,8 +853,19 @@ module.exports = {
 			args: [tid, ttype, ptype],
 			chainId: channel_name
 		};
-		invoke_chaincode(request, function(txid) {
+		invoke_chaincode(request, async function(txid) {
 			if(ttype == "single") {
+				var doc = await Mytask.findOne({tid: tid})
+
+				let new_tx = new MyTx({
+					time: timestampToTime(new Date().getTime()),
+					txid: txid,
+					behavior: "取消任务",
+					peer: "",
+					publisher: doc.publisher,
+					object: tid
+				})
+				var temp3 = await new_tx.save()
 				Mytask.update({
 					tid: tid
 				}, {
@@ -819,14 +901,35 @@ module.exports = {
 			    args: [tid, uid],
 			    chainId: channel_name
 			};
-			invoke_chaincode(request, function(txid) {
-				Mytask.update({
+			invoke_chaincode(request, async function(txid) {
+				var temp = await Mytask.update({
 					tid: tid
 				}, {
 					time_complete: new Date().getTime()
-				}, function(err) {
-					res.send(txid)
 				})
+
+				var doc = Mytask.findOne({tid: tid})
+				var user = Myuser.findOne({uid: uid})
+				let new_mess = new Mymessage({
+						name: doc.publisher,
+						type: doc.type,
+						post: "system",
+						post_type: "system",
+						mess: "用户:" + name + "确认了您发布的任务task" + tid + ",其信息为:地址:" + user.address + ",电话:" + user.phone,
+						time: timestampToTime(new Date().getTime()),
+						read: "0"
+					})
+				var temp2 = await new_mess.save()
+				let new_tx = new MyTx({
+					time: timestampToTime(new Date().getTime()),
+					txid: txid,
+					behavior: "确认任务",
+					peer: "",
+					publisher: name,
+					object: tid
+				})
+				var temp3 = await new_tx.save()
+				res.send(txid)
 			})
 		})
 	},
@@ -846,15 +949,35 @@ module.exports = {
 			    args: [tid, uid, name],
 			    chainId: channel_name
 			};
-			invoke_chaincode(request, function(txid) {
-				Mytask.update({
+			invoke_chaincode(request, async function(txid) {
+				var temp = await Mytask.update({
 					tid: tid
 				}, {
 					time_accept: new Date().getTime(),
 					owner: name
-				}, function(err) {
-					res.send(txid)
 				})
+				var doc = Mytask.findOne({tid: tid})
+				var user = Myuser.findOne({uid: uid})
+				let new_mess = new Mymessage({
+						name: doc.publisher,
+						type: doc.type,
+						post: "system",
+						post_type: "system",
+						mess: "用户:" + name + "接受了您发布的任务task" + tid + ",其信息为:地址:" + user.address + ",电话:" + user.phone,
+						time: timestampToTime(new Date().getTime()),
+						read: "0"
+					})
+				var temp2 = await new_mess.save()
+				let new_tx = new MyTx({
+					time: timestampToTime(new Date().getTime()),
+					txid: txid,
+					behavior: "接受任务",
+					peer: "",
+					publisher: name,
+					object: tid
+				})
+				var temp3 = await new_tx.save()
+				res.send(txid)
 			})
 		})
 	},
@@ -1008,7 +1131,16 @@ module.exports = {
 		    args: [tid],
 		    chainId: channel_name
 		};
-		invoke_chaincode(request, function(txid) {
+		invoke_chaincode(request, async function(txid) {
+			let new_tx = new MyTx({
+					time: timestampToTime(new Date().getTime()),
+					txid: txid,
+					behavior: "记录争议任务",
+					peer: "",
+					publisher: tid,
+					object: tid
+				})
+				var temp3 = await new_tx.save()
 			return res.send("record successfully")
 		})
 	},
@@ -1095,10 +1227,10 @@ module.exports = {
 	},
 	async queryTransaction(req, res) {
 		var tid = req.query.id
+		var doc = await MyTx.findOne({txid: tid})
 		var result = await channel.queryTransaction(tid)
-		console.log(result.transactionEnvelope.payload.header)
-		console.log(result.transactionEnvelope.payload.data)
-
+		doc.peer = result.transactionEnvelope.payload.data.actions[0].header.creator.Mspid
+		res.send(doc)
 	}
 
 }

@@ -1,5 +1,11 @@
-extends layout
-
-block content
-  h1= title
-  p Welcome to #{title}
+doctype html
+html
+  head
+    title
+  body
+    form#uploadForm(name='image', method='post', enctype='multipart/form-data', action='/uploadImage')
+      p(style='margin:10px 0;')
+        | 上传图片:
+        input(type='text', name='name', value='xixixi')
+        input(type='file', name='imageFile', multiple='multiple')
+        input#fileSubmit(type='submit', value='上传')

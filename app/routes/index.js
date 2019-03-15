@@ -1,7 +1,10 @@
 var express = require('express');
 var router = express.Router();
 const helper = require('./helper')
+const multer = require('multer')
+const fs = require('fs')
 
+var uploadimage = multer({dest: 'tmp/'})
 
 // router.all('*', function(req, res, next) {
 //     res.header("Access-Control-Allow-Origin", "*");
@@ -47,6 +50,35 @@ router.get('/query', helper.query)
 	.get('/queryTransaction', helper.queryTransaction)
 
 	.get('/registerInstitutionbackdoor', helper.registerInstitutionbackdoor)
+
+	.post('/uploadImage', uploadimage.single('imageFile'), function(req, res) {
+		var tmp_path = req.file.path
+		var target_path = 'upload/' + req.file.originalname
+		console.log(req.body.name)
+		console.log(req.file.path)
+		console.log(req.file.originalname)
+		var src = fs.createReadStream(tmp_path);
+  		var dest = fs.createWriteStream(target_path);
+  		src.pipe(dest);
+  		src.on('end', function() { res.send('complete'); });
+  		src.on('error', function(err) { res.send('error'); });
+	})
+
+	.get('/showImage', function(req, res) {
+		fs.readFile('./upload/' + req.query.name + ".jpg", function(err, file) {
+			if(err) {
+				res.send(err)
+			} else {
+				res.writeHead(200, {"Content-Type": "image/png"})
+				res.write(file, "binary")
+				res.end()
+			}
+		})
+	})
+
+	.get('/index', function(req, res) {
+		res.render("index")
+	})
 	
 
 
